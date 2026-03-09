@@ -313,18 +313,18 @@ func (n *Node) WriteToOptions(w io.Writer, opts NodeWriteOptions) (int64, error)
 		if err == nil {
 			// arguments must always be quoted
 			if opts.IgnoreFlags {
-				write([]byte(arg.UnformattedString()))
+				write([]byte(arg.UnformattedStringVersion(opts.Version)))
 			} else {
-				write([]byte(arg.FormattedString()))
+				write([]byte(arg.FormattedStringVersion(opts.Version)))
 			}
 
 		}
 	}
 	if n.Properties.Exist() && err == nil {
 		if opts.IgnoreFlags {
-			write([]byte(n.Properties.UnformattedString()))
+			write([]byte(n.Properties.UnformattedStringVersion(opts.Version)))
 		} else {
-			write([]byte(n.Properties.String()))
+			write([]byte(n.Properties.StringVersion(opts.Version)))
 		}
 	}
 	if err == nil {

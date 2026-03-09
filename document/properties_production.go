@@ -67,6 +67,38 @@ func (p Properties) String() string {
 	return string(b)
 }
 
+// StringVersion returns the KDL representation of the property list with version-aware formatting
+func (p Properties) StringVersion(version int) string {
+	b := make([]byte, 0, len(p)*(1+8+1+8))
+	for k, v := range p {
+		b = append(b, ' ')
+		if len(k) > 0 && tokenizer.IsBareIdentifier(k, 0) {
+			b = append(b, k...)
+		} else {
+			b = AppendQuotedString(b, k, '"')
+		}
+		b = append(b, '=')
+		b = append(b, v.FormattedStringVersion(version)...)
+	}
+	return string(b)
+}
+
+// UnformattedStringVersion returns the KDL representation with version-aware formatting, numbers in decimal
+func (p Properties) UnformattedStringVersion(version int) string {
+	b := make([]byte, 0, len(p)*(1+8+1+8))
+	for k, v := range p {
+		b = append(b, ' ')
+		if len(k) > 0 && tokenizer.IsBareIdentifier(k, 0) {
+			b = append(b, k...)
+		} else {
+			b = AppendQuotedString(b, k, '"')
+		}
+		b = append(b, '=')
+		b = append(b, v.UnformattedStringVersion(version)...)
+	}
+	return string(b)
+}
+
 // UnformattedString returns the KDL representation of the property list, formatting numbers in decimal
 func (p Properties) UnformattedString() string {
 	b := make([]byte, 0, len(p)*(1+8+1+8))

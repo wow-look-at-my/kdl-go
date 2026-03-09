@@ -7,7 +7,6 @@ import (
 	"github.com/sblinch/kdl-go/document"
 	"github.com/sblinch/kdl-go/internal/marshaler"
 	"github.com/sblinch/kdl-go/internal/parser"
-	"github.com/sblinch/kdl-go/internal/tokenizer"
 )
 
 type UnmarshalOptions = marshaler.UnmarshalOptions
@@ -68,14 +67,11 @@ func UnmarshalWithOptions(data []byte, v interface{}, opts UnmarshalOptions) err
 	if opts.ParseComments {
 		parseOpts.Flags |= parser.ParseComments
 	}
-	s := tokenizer.NewSlice(data)
-	s.RelaxedNonCompliant = opts.RelaxedNonCompliant
-	s.ParseComments = opts.ParseComments
-	doc, err := parseScanner(s, parseOpts)
+	doc, err := ParseSliceWithOptions(data, parseOpts)
 	if err != nil {
 		return err
 	}
-	return marshaler.Unmarshal(doc, v)
+	return marshaler.UnmarshalWithOptions(doc, v, opts)
 }
 
 func UnmarshalDocument(doc *document.Document, v interface{}) error {
