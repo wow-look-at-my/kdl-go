@@ -596,6 +596,12 @@ func (s *Scanner) Pos() (int, int) {
 // extractLineAtOffset returns a string containing the line at the specified offset in the input buffer, a newline, and
 // a caret positioned to indicate the current position in the input buffer
 func (s *Scanner) extractLineAtOffset(offset int) string {
+	if offset >= len(s.raw) {
+		offset = len(s.raw) - 1
+	}
+	if offset < 0 {
+		offset = 0
+	}
 	start := offset
 	for start > 0 {
 		start--

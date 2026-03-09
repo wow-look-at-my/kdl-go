@@ -78,9 +78,9 @@ func ParseSliceWithOptions(data []byte, opts ParseOptions) (*document.Document, 
 
 // parseSliceAutoDetect checks for a version marker and parses accordingly.
 // If a /- kdl-version marker is found, uses that version definitively.
-// If no marker is found, parses as both v1 and v2; if both succeed and produce
-// equivalent documents, returns the v2 result. If they differ (e.g. bare true/false/null
-// semantics), returns the v2 result (preferring v2). If only one succeeds, returns that.
+// If no marker is found, heuristically detects the version:
+//   - If v1-specific syntax is detected (bare true/false/null, r"..." raw strings), uses v1
+//   - Otherwise tries v2 first, falls back to v1 on parse error
 func parseSliceAutoDetect(data []byte, opts ParseOptions) (*document.Document, error) {
 	// Check for version marker in the input — definitive, no fallback
 	if version := detectVersionMarker(data); version != 0 {
@@ -91,40 +91,96 @@ func parseSliceAutoDetect(data []byte, opts ParseOptions) (*document.Document, e
 		return parseScanner(s, opts)
 	}
 
-	// No marker: try both versions
+	// Heuristic: detect v1-specific syntax
+	if hasV1Syntax(data) {
+		s := tokenizer.NewSlice(data)
+		s.RelaxedNonCompliant = opts.RelaxedNonCompliant
+		s.ParseComments = opts.Flags.Has(parser.ParseComments)
+		s.Version = 1
+		return parseScanner(s, opts)
+	}
+
+	// Try v2 first
 	dataCopy := make([]byte, len(data))
 	copy(dataCopy, data)
-
-	// Try v2
-	s2 := tokenizer.NewSlice(dataCopy)
-	s2.RelaxedNonCompliant = opts.RelaxedNonCompliant
-	s2.ParseComments = opts.Flags.Has(parser.ParseComments)
-	s2.Version = 2
-	doc2, err2 := parseScanner(s2, opts)
-
-	// Try v1
-	s1 := tokenizer.NewSlice(data)
-	s1.RelaxedNonCompliant = opts.RelaxedNonCompliant
-	s1.ParseComments = opts.Flags.Has(parser.ParseComments)
-	s1.Version = 1
-	doc1, err1 := parseScanner(s1, opts)
-
-	// If only one succeeds, use that
-	if err2 != nil && err1 == nil {
-		return doc1, nil
-	}
-	if err1 != nil && err2 == nil {
-		return doc2, nil
-	}
-	if err1 != nil && err2 != nil {
-		// Both failed — return v2 error (more likely the intended version)
-		return nil, err2
+	s := tokenizer.NewSlice(dataCopy)
+	s.RelaxedNonCompliant = opts.RelaxedNonCompliant
+	s.ParseComments = opts.Flags.Has(parser.ParseComments)
+	s.Version = 2
+	doc, err := parseScanner(s, opts)
+	if err == nil {
+		return doc, nil
 	}
 
-	// Both succeeded: if documents are equivalent, prefer v2
-	// If they differ (e.g. bare true/false/null parsed differently), also prefer v2
-	// since the user specified v2-first preference
-	return doc2, nil
+	// V2 failed, fall back to v1
+	s = tokenizer.NewSlice(data)
+	s.RelaxedNonCompliant = opts.RelaxedNonCompliant
+	s.ParseComments = opts.Flags.Has(parser.ParseComments)
+	s.Version = 1
+	return parseScanner(s, opts)
+}
+
+// hasV1Syntax returns true if the data contains syntax that is specific to KDL v1
+// and would be interpreted differently (or be invalid) in v2.
+// Detects: bare true/false/null keywords, r"..." raw strings
+func hasV1Syntax(data []byte) bool {
+	return containsBareKeyword(data, []byte("true")) ||
+		containsBareKeyword(data, []byte("false")) ||
+		containsBareKeyword(data, []byte("null")) ||
+		containsV1RawString(data)
+}
+
+// containsBareKeyword returns true if data contains keyword as a standalone bare token
+// (preceded by whitespace/= and followed by whitespace/newline/;/}/EOF)
+func containsBareKeyword(data []byte, keyword []byte) bool {
+	for i := 0; i < len(data); {
+		idx := bytes.Index(data[i:], keyword)
+		if idx == -1 {
+			return false
+		}
+		pos := i + idx
+		end := pos + len(keyword)
+
+		// Check preceding char: must be whitespace or = (indicating it's a value, not part of an identifier)
+		if pos > 0 {
+			prev := data[pos-1]
+			if prev != ' ' && prev != '\t' && prev != '=' {
+				i = end
+				continue
+			}
+		}
+
+		// Check following char: must be whitespace, newline, ;, }, or EOF
+		if end < len(data) {
+			next := data[end]
+			if next != ' ' && next != '\t' && next != '\n' && next != '\r' &&
+				next != ';' && next != '}' && next != '{' {
+				i = end
+				continue
+			}
+		}
+
+		return true
+	}
+	return false
+}
+
+// containsV1RawString returns true if data contains v1-style raw strings (r"..." or r#"..."#)
+func containsV1RawString(data []byte) bool {
+	for i := 0; i < len(data)-1; i++ {
+		if data[i] == 'r' && (data[i+1] == '"' || data[i+1] == '#') {
+			// Check it's not part of a larger identifier
+			if i > 0 {
+				prev := data[i-1]
+				if prev != ' ' && prev != '\t' && prev != '\n' && prev != '\r' &&
+					prev != '=' && prev != '(' && prev != '{' {
+					continue
+				}
+			}
+			return true
+		}
+	}
+	return false
 }
 
 // detectVersionMarker scans for /- kdl-version N at the beginning of data

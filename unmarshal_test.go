@@ -1201,13 +1201,19 @@ func TestUnmarshalMapTimes(t *testing.T) {
 	if err := Unmarshal([]byte(k), &got); err != nil {
 		t.Fatal(err)
 	}
+	wantTime, _ := time.Parse(time.RFC3339, "2023-10-08T15:54:13-07:00")
 	want := mt{
 		MapTimes: map[string]time.Time{
-			"test": time.Date(2023, 10, 8, 15, 54, 13, 0, time.Local),
+			"test": wantTime,
 		},
 	}
-	if !reflect.DeepEqual(want, got) {
-		t.Errorf("want: %#v\n got: %#v\n", want, got)
+	// Compare using Equal method which handles timezone equivalence
+	for k, wv := range want.MapTimes {
+		if gv, ok := got.MapTimes[k]; !ok {
+			t.Errorf("missing key %q", k)
+		} else if !wv.Equal(gv) {
+			t.Errorf("key %q: want %v, got %v", k, wv, gv)
+		}
 	}
 }
 
