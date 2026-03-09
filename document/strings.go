@@ -218,6 +218,9 @@ func AppendUnquotedString(b []byte, s string, quote byte) ([]byte, error) {
 					b = append(b, '\b')
 				case 'f':
 					b = append(b, '\f')
+				case 's':
+					// KDL v2 \s escape: space character
+					b = append(b, ' ')
 				case 'u':
 					// make sure we have enough room for `{n}`
 					if i+3 >= lenS || s[i+1] != '{' {

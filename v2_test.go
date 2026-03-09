@@ -422,6 +422,25 @@ func TestV2Properties(t *testing.T) {
 	}
 }
 
+func TestV2EscapeS(t *testing.T) {
+	// v2 supports \s escape for space character
+	input := `node "hello\sworld"`
+
+	doc, err := ParseSliceWithOptions([]byte(input), ParseOptions{Version: 2})
+	if err != nil {
+		t.Fatalf("failed to parse: %v", err)
+	}
+
+	n := doc.Nodes[0]
+	if len(n.Arguments) != 1 {
+		t.Fatalf("expected 1 argument, got %d", len(n.Arguments))
+	}
+
+	if v, ok := n.Arguments[0].Value.(string); !ok || v != "hello world" {
+		t.Errorf("expected %q, got %T %v", "hello world", n.Arguments[0].Value, n.Arguments[0].Value)
+	}
+}
+
 func TestV1RawStringAutoDetect(t *testing.T) {
 	// Documents with r"..." should be auto-detected as v1
 	input := `node r"hello\nworld"`
