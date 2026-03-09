@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
-	"slices"
 	"strings"
 	"sync/atomic"
 
@@ -376,7 +375,7 @@ func (i *typeIndexer) indexStructFields(typ reflect.Type, typeDetails *typeDetai
 		}
 
 		attrs := fieldAttrs(field.Tag)
-		structure := slices.Contains(attrs, "structure")
+		structure := structFieldAttrs(attrs).Has("structure")
 		if !field.IsExported() {
 			if structure {
 				return errUnexportedStructure
