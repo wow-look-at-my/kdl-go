@@ -414,11 +414,21 @@ func parseQuotedString(b []byte) (string, error) {
 // parseRawString parses a KDL RawString from b and returns the unquoted string, or a non-nil error on failure.
 // Handles both v1 format (r"..."  r#"..."#) and v2 format (#"..."#  ##"..."##)
 func parseRawString(b []byte) (string, error) {
-	// the tokenizer has already validated the string format, so we can safely just use byte offsets
+	// Find the opening quote
 	p := bytes.IndexByte(b, '"')
-	b = b[p+1:]
-	b = b[0 : len(b)-p]
-	return string(b), nil
+	// Count the hash characters before the opening quote (in v2: `##"` has 2 hashes; in v1: `r#"` has 1 hash after `r`)
+	hashes := 0
+	for i := p - 1; i >= 0; i-- {
+		if b[i] == '#' {
+			hashes++
+		} else {
+			break
+		}
+	}
+	// Content is between opening quote and closing quote+hashes
+	// Strip: opening prefix (p+1 bytes) from start, closing (1 + hashes) bytes from end
+	content := b[p+1 : len(b)-1-hashes]
+	return string(content), nil
 }
 
 // appendFloatKeyword appends the v2 keyword for special float values (#inf, #-inf, #nan)
