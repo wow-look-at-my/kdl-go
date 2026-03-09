@@ -247,8 +247,9 @@ var stateTransitions = map[parserState]map[tokenizer.TokenID]stateTransitionFunc
 			return nil
 		},
 		tokenizer.BareIdentifier: func(c *ParseContext, t tokenizer.Token) error {
-			if c.opts.RelaxedNonCompliant.Permit(relaxed.NGINXSyntax) {
-				// a bare identifier inside a node declaration in nginx syntax mode is either an argument or a property name; save it
+			if c.opts.RelaxedNonCompliant.Permit(relaxed.NGINXSyntax) || c.opts.Version == 2 {
+				// In nginx syntax mode or v2 mode, a bare identifier is either an argument or a property name; save it
+				// (in v2, true/false/null are bare identifiers that may appear as arguments)
 				c.ident = t
 				c.state = stateArgProp
 			} else {
@@ -283,17 +284,6 @@ var stateTransitions = map[parserState]map[tokenizer.TokenID]stateTransitionFunc
 			// a non-string value inside a node declaration is always an argument, but we save it just to make sure it isn't followed by an equal sign
 			c.ident = t
 			c.state = stateArgProp
-			return nil
-
-			// a numeric value inside a node declaration is always an argument
-			if c.ignoreNextArgProp {
-				c.ignoreNextArgProp = false
-			} else if err := c.currentNode().AddArgumentToken(t, c.typeAnnot); err != nil {
-				return err
-			}
-
-			c.typeAnnot.Clear()
-			c.ident.Clear()
 			return nil
 		},
 		tokenizer.BraceOpen: func(c *ParseContext, t tokenizer.Token) error {

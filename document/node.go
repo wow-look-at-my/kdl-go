@@ -172,6 +172,8 @@ type NodeWriteOptions struct {
 	AddEquals bool
 	// AddEquals causes ':' symbols to be inserted between nodes and their values, which is noncompliant with the KDL spec
 	AddColons bool
+	// Version specifies the KDL version for output (1=v1, 2=v2)
+	Version int
 }
 
 var defaultNodeWriteOptions = NodeWriteOptions{
@@ -311,18 +313,18 @@ func (n *Node) WriteToOptions(w io.Writer, opts NodeWriteOptions) (int64, error)
 		if err == nil {
 			// arguments must always be quoted
 			if opts.IgnoreFlags {
-				write([]byte(arg.UnformattedString()))
+				write([]byte(arg.UnformattedStringVersion(opts.Version)))
 			} else {
-				write([]byte(arg.FormattedString()))
+				write([]byte(arg.FormattedStringVersion(opts.Version)))
 			}
 
 		}
 	}
 	if n.Properties.Exist() && err == nil {
 		if opts.IgnoreFlags {
-			write([]byte(n.Properties.UnformattedString()))
+			write([]byte(n.Properties.UnformattedStringVersion(opts.Version)))
 		} else {
-			write([]byte(n.Properties.String()))
+			write([]byte(n.Properties.StringVersion(opts.Version)))
 		}
 	}
 	if err == nil {

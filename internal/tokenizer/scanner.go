@@ -42,6 +42,18 @@ type Scanner struct {
 	RelaxedNonCompliant relaxed.Flags
 	ParseComments       bool
 	r                   io.Reader
+	// Version specifies the KDL version to use for tokenizing (0=auto-detect, 1=v1, 2=v2)
+	Version int
+}
+
+// effectiveVersion returns the KDL version to use for tokenizing.
+// If Version is explicitly set, it returns that. Otherwise defaults to 1.
+// The v2-first auto-detection strategy is handled at the public API level (kdl.go).
+func (s *Scanner) effectiveVersion() int {
+	if s.Version != 0 {
+		return s.Version
+	}
+	return 1
 }
 
 // log records a log message if a logger has been configured
@@ -546,6 +558,11 @@ func (s *Scanner) readNext() (Token, error) {
 			if err != nil {
 				return token, err
 			}
+		} else if c == '#' && s.effectiveVersion() == 2 {
+			s.log("reading v2 hash token")
+			if token.ID, token.Data, err = s.readV2HashToken(); err != nil {
+				return token, err
+			}
 		} else if c == ':' && s.RelaxedNonCompliant.Permit(relaxed.YAMLTOMLAssignments) {
 			s.log("reading colon")
 			token.ID = Whitespace
@@ -579,6 +596,12 @@ func (s *Scanner) Pos() (int, int) {
 // extractLineAtOffset returns a string containing the line at the specified offset in the input buffer, a newline, and
 // a caret positioned to indicate the current position in the input buffer
 func (s *Scanner) extractLineAtOffset(offset int) string {
+	if offset >= len(s.raw) {
+		offset = len(s.raw) - 1
+	}
+	if offset < 0 {
+		offset = 0
+	}
 	start := offset
 	for start > 0 {
 		start--

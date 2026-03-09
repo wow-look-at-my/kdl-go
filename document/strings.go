@@ -218,6 +218,9 @@ func AppendUnquotedString(b []byte, s string, quote byte) ([]byte, error) {
 					b = append(b, '\b')
 				case 'f':
 					b = append(b, '\f')
+				case 's':
+					// KDL v2 \s escape: space character
+					b = append(b, ' ')
 				case 'u':
 					// make sure we have enough room for `{n}`
 					if i+3 >= lenS || s[i+1] != '{' {
@@ -274,6 +277,11 @@ func rawString(s string) string {
 	return string(AppendRawString(b, s))
 }
 
+func rawStringV2(s string) string {
+	b := make([]byte, 0, 8*2+len(s))
+	return string(AppendRawStringV2(b, s))
+}
+
 // AppendRawString appends s, quoted for use as a KDL RawString, to b and returns the expanded buffer.
 func AppendRawString(b []byte, s string) []byte {
 	// inelegant brute force approach because generation is not something I really care about at this point
@@ -304,5 +312,38 @@ func AppendRawString(b []byte, s string) []byte {
 	b = append(b, '"')
 	b = append(b, s...)
 	b = append(b, marker...)
+	return b
+}
+
+// AppendRawStringV2 appends s, quoted for use as a KDL v2 raw string (#"..."#), to b and returns the expanded buffer.
+func AppendRawStringV2(b []byte, s string) []byte {
+	// Find minimum number of hashes needed so that the closing sequence ("###...) doesn't appear in s
+	hashes := 0
+	for {
+		closing := `"`
+		for i := 0; i < hashes; i++ {
+			closing += "#"
+		}
+		if !strings.Contains(s, closing) {
+			break
+		}
+		hashes++
+	}
+
+	minSpace := hashes*2 + 2 + len(s)
+	if cap(b)-len(b) < minSpace {
+		n := make([]byte, 0, len(b)+minSpace)
+		n = append(n, b...)
+		b = n
+	}
+	for i := 0; i < hashes; i++ {
+		b = append(b, '#')
+	}
+	b = append(b, '"')
+	b = append(b, s...)
+	b = append(b, '"')
+	for i := 0; i < hashes; i++ {
+		b = append(b, '#')
+	}
 	return b
 }

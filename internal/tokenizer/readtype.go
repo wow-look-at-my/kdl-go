@@ -278,10 +278,13 @@ func (s *Scanner) readBareIdentifier() (TokenID, []byte, error) {
 	}
 	tokenType := BareIdentifier
 
-	if string(literal) == "true" || string(literal) == "false" {
-		tokenType = Boolean
-	} else if string(literal) == "null" {
-		tokenType = Null
+	// In v2, true/false/null are plain identifiers (keywords use #true/#false/#null)
+	if s.effectiveVersion() != 2 {
+		if string(literal) == "true" || string(literal) == "false" {
+			tokenType = Boolean
+		} else if string(literal) == "null" {
+			tokenType = Null
+		}
 	}
 
 	return tokenType, literal, nil
@@ -302,18 +305,17 @@ func (s *Scanner) readIdentifier() (TokenID, []byte, error) {
 	// r.log("reading an identifier", "start-with", string(c), "second-char", string(c2))
 	switch c {
 	case 'r':
-		// r.log("maybe a raw string", "second-char", string(c2))
-		_, c2, err := s.peekTwo()
-		if err == nil && (c2 == '#' || c2 == '"') {
-			// r.log("fo sho a raw string, reading")
-			literal, err := s.readRawString()
-			return RawString, literal, err
-		} else {
-			// r.log("must be a bare identifier")
-			// possible bare identifier starting with 'r'
-			tokenType, literal, err := s.readBareIdentifier()
-			return tokenType, literal, err
+		// In v2, r"..." is not raw string syntax (use #"..."# instead)
+		if s.effectiveVersion() != 2 {
+			_, c2, err := s.peekTwo()
+			if err == nil && (c2 == '#' || c2 == '"') {
+				literal, err := s.readRawString()
+				return RawString, literal, err
+			}
 		}
+		// bare identifier starting with 'r'
+		tokenType, literal, err := s.readBareIdentifier()
+		return tokenType, literal, err
 
 	case '"':
 		s.log("quoted string, reading")
@@ -524,4 +526,111 @@ func (s *Scanner) readBinary() ([]byte, error) {
 		}
 		return c == '0' || c == '1' || c == '_'
 	})
+}
+
+// readV2HashToken reads a v2 hash-prefixed token from the current position.
+// In KDL v2, '#' can start: #true, #false, #null, #inf, #-inf, #nan, or #"raw string"#
+func (s *Scanner) readV2HashToken() (TokenID, []byte, error) {
+	s.pushMark()
+	defer s.popMark()
+
+	// Count leading hashes
+	hashes := 0
+	for {
+		c, err := s.peek()
+		if err != nil {
+			return Unknown, nil, err
+		}
+		if c != '#' {
+			break
+		}
+		s.skip()
+		hashes++
+	}
+
+	// Check what follows the hash(es)
+	c, err := s.peek()
+	if err != nil {
+		return Unknown, nil, fmt.Errorf("unexpected end of input after #")
+	}
+
+	// Raw string: #"..."# or ##"..."## etc
+	if c == '"' {
+		return s.readV2RawStringAfterHashes(hashes)
+	}
+
+	// Keywords only valid with a single #
+	if hashes != 1 {
+		return Unknown, nil, fmt.Errorf("unexpected character %c after ##", c)
+	}
+
+	// Read the keyword after #
+	keyword, err := s.readWhile(func(c rune) bool {
+		return (c >= 'a' && c <= 'z') || c == '-'
+	}, 1)
+	if err != nil {
+		return Unknown, nil, fmt.Errorf("unexpected character after #")
+	}
+
+	data := s.copyFromMark()
+
+	switch string(keyword) {
+	case "true", "false":
+		return Boolean, data, nil
+	case "null":
+		return Null, data, nil
+	case "inf", "-inf", "nan":
+		return FloatKeyword, data, nil
+	default:
+		return Unknown, nil, fmt.Errorf("unknown keyword #%s", string(keyword))
+	}
+}
+
+// readV2RawStringAfterHashes reads a v2 raw string after the leading hashes have been consumed.
+// The opening " has not yet been consumed.
+func (s *Scanner) readV2RawStringAfterHashes(hashes int) (TokenID, []byte, error) {
+	// Consume the opening quote
+	c, err := s.get()
+	if err != nil {
+		return Unknown, nil, err
+	}
+	if c != '"' {
+		return Unknown, nil, fmt.Errorf("unexpected character %c", c)
+	}
+
+	// Read until we find closing " followed by the same number of #
+	foundQuote := false
+	endHashes := 0
+	for {
+		c, err = s.get()
+		if err != nil {
+			if err == io.EOF {
+				err = io.ErrUnexpectedEOF
+			}
+			return Unknown, nil, err
+		}
+		if foundQuote {
+			if c == '#' {
+				endHashes++
+				if endHashes == hashes {
+					return RawString, s.copyFromMark(), nil
+				}
+			} else if c == '"' {
+				endHashes = 0
+			} else {
+				foundQuote = false
+				endHashes = 0
+			}
+		} else if c == '"' {
+			if hashes == 0 {
+				// No hashes needed — bare #"..."
+				// But wait, we need at least 1 hash for v2 raw strings
+				// Actually #"foo"# has 1 hash. If hashes==0 that's not valid for v2.
+				// This shouldn't happen since we counted at least 1 hash above.
+				return RawString, s.copyFromMark(), nil
+			}
+			foundQuote = true
+			endHashes = 0
+		}
+	}
 }

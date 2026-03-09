@@ -67,10 +67,18 @@ func (v *Value) AppendTo(b []byte) []byte {
 
 // value appends the string representation of this Value to b using the specified opts, and returns the expanded buffer
 func (v *Value) value(b []byte, opts valueOpts) []byte {
+	return v.valueVersion(b, opts, 0)
+}
+
+// valueVersion appends the string representation of this Value to b using the specified opts and version
+func (v *Value) valueVersion(b []byte, opts valueOpts, version int) []byte {
 	haveOpt := func(opt valueOpts) bool {
 		return (opts & opt) != 0
 	}
 	if v.Value == nil {
+		if version == 2 {
+			return append(b, "#null"...)
+		}
 		return append(b, "null"...)
 	}
 
@@ -154,29 +162,44 @@ func (v *Value) value(b []byte, opts valueOpts) []byte {
 		}
 		b = strconv.AppendInt(b, x, base)
 	case float32:
-		l10 := math.Log10(math.Abs(float64(x)))
-		if !math.IsInf(l10, 0) && (l10 > 9 || l10 < -9) {
-			b = strconv.AppendFloat(b, float64(x), 'E', -1, 32)
+		f64 := float64(x)
+		if version == 2 && (math.IsInf(f64, 0) || math.IsNaN(f64)) {
+			b = appendFloatKeyword(b, f64)
 		} else {
-			// make sure floats in decimal notation always include a decimal point
-			b = strconv.AppendFloat(b, float64(x), 'f', -1, 32)
-			if _, frac := math.Modf(float64(x)); frac == 0.0 {
-				b = append(b, '.', '0')
+			l10 := math.Log10(math.Abs(f64))
+			if !math.IsInf(l10, 0) && (l10 > 9 || l10 < -9) {
+				b = strconv.AppendFloat(b, f64, 'E', -1, 32)
+			} else {
+				b = strconv.AppendFloat(b, f64, 'f', -1, 32)
+				if _, frac := math.Modf(f64); frac == 0.0 {
+					b = append(b, '.', '0')
+				}
 			}
 		}
 	case float64:
-		l10 := math.Log10(math.Abs(x))
-		if !math.IsInf(l10, 0) && (l10 > 9 || l10 < -9) {
-			b = strconv.AppendFloat(b, x, 'E', -1, 64)
+		if version == 2 && (math.IsInf(x, 0) || math.IsNaN(x)) {
+			b = appendFloatKeyword(b, x)
 		} else {
-			// make sure floats in decimal notation always include a decimal point
-			b = strconv.AppendFloat(b, x, 'f', -1, 64)
-			if _, frac := math.Modf(float64(x)); frac == 0.0 {
-				b = append(b, '.', '0')
+			l10 := math.Log10(math.Abs(x))
+			if !math.IsInf(l10, 0) && (l10 > 9 || l10 < -9) {
+				b = strconv.AppendFloat(b, x, 'E', -1, 64)
+			} else {
+				b = strconv.AppendFloat(b, x, 'f', -1, 64)
+				if _, frac := math.Modf(float64(x)); frac == 0.0 {
+					b = append(b, '.', '0')
+				}
 			}
 		}
 	case bool:
-		b = strconv.AppendBool(b, x)
+		if version == 2 {
+			if x {
+				b = append(b, "#true"...)
+			} else {
+				b = append(b, "#false"...)
+			}
+		} else {
+			b = strconv.AppendBool(b, x)
+		}
 	case string:
 
 		isBare := tokenizer.IsBareIdentifier(x, 0)
@@ -193,7 +216,11 @@ func (v *Value) value(b []byte, opts valueOpts) []byte {
 			b = append(b, x...)
 		} else {
 			if v.Flag == FlagRaw && haveOpt(voStrictStringFlags) {
-				b = AppendRawString(b, x)
+				if version == 2 {
+					b = AppendRawStringV2(b, x)
+				} else {
+					b = AppendRawString(b, x)
+				}
 			} else if v.Flag == FlagQuoted || (v.Flag == FlagRaw && !haveOpt(voStrictStringFlags)) {
 				b = AppendQuotedString(b, x, '"')
 			} else if isBare && !haveOpt(voNoBare) {
@@ -231,6 +258,11 @@ func (v *Value) value(b []byte, opts valueOpts) []byte {
 // string returns the KDL representation of this value with the specified opts, including type annotation if available,
 // eg: (u8)1234
 func (v *Value) string(opts valueOpts) string {
+	return v.stringVersion(opts, 0)
+}
+
+// stringVersion returns the KDL representation with version-aware formatting
+func (v *Value) stringVersion(opts valueOpts, version int) string {
 	var b []byte
 	if len(v.Type) > 0 {
 		b = make([]byte, 0, 32)
@@ -239,7 +271,7 @@ func (v *Value) string(opts valueOpts) string {
 		b = append(b, ')')
 	}
 
-	b = v.value(b, opts)
+	b = v.valueVersion(b, opts, version)
 	return string(b)
 }
 
@@ -258,12 +290,22 @@ func (v *Value) FormattedString() string {
 	return v.string(voNoBare | voUseNumericFlags)
 }
 
+// FormattedStringVersion is like FormattedString but version-aware.
+func (v *Value) FormattedStringVersion(version int) string {
+	return v.stringVersion(voNoBare|voUseNumericFlags, version)
+}
+
 // UnformattedString is similar to String, but bare strings are converted to quoted strings and numbers are formatted
 // in decimal notation.
 //
 // This is suitable for returning arguments and property values while ignoring their original formatting.
 func (v *Value) UnformattedString() string {
 	return v.string(voNoBare)
+}
+
+// UnformattedStringVersion is like UnformattedString but version-aware.
+func (v *Value) UnformattedStringVersion(version int) string {
+	return v.stringVersion(voNoBare, version)
 }
 
 // NodeNameString returns the simplest possible KDL representation of this Value, including type annotation, formatting
@@ -369,13 +411,36 @@ func parseQuotedString(b []byte) (string, error) {
 	return v, err
 }
 
-// parseRawString parses a KDL RawString from b and returns the unquoted string, or a non-nil error on failure
+// parseRawString parses a KDL RawString from b and returns the unquoted string, or a non-nil error on failure.
+// Handles both v1 format (r"..."  r#"..."#) and v2 format (#"..."#  ##"..."##)
 func parseRawString(b []byte) (string, error) {
-	// the tokenizer has already validated the string format, so we can safely just use byte offsets
+	// Find the opening quote
 	p := bytes.IndexByte(b, '"')
-	b = b[p+1:]
-	b = b[0 : len(b)-p]
-	return string(b), nil
+	// Count the hash characters before the opening quote (in v2: `##"` has 2 hashes; in v1: `r#"` has 1 hash after `r`)
+	hashes := 0
+	for i := p - 1; i >= 0; i-- {
+		if b[i] == '#' {
+			hashes++
+		} else {
+			break
+		}
+	}
+	// Content is between opening quote and closing quote+hashes
+	// Strip: opening prefix (p+1 bytes) from start, closing (1 + hashes) bytes from end
+	content := b[p+1 : len(b)-1-hashes]
+	return string(content), nil
+}
+
+// appendFloatKeyword appends the v2 keyword for special float values (#inf, #-inf, #nan)
+func appendFloatKeyword(b []byte, x float64) []byte {
+	if math.IsInf(x, 1) {
+		return append(b, "#inf"...)
+	} else if math.IsInf(x, -1) {
+		return append(b, "#-inf"...)
+	} else if math.IsNaN(x) {
+		return append(b, "#nan"...)
+	}
+	return b
 }
 
 // ValueFromToken creates and returns a Value representing the content of t, or a non-nil error on failure
@@ -405,9 +470,19 @@ func ValueFromToken(t tokenizer.Token) (*Value, error) {
 		v.Value, err = parseNumber(t.Data, 16)
 		v.Flag = FlagHexadecimal
 	case tokenizer.Boolean:
-		v.Value = t.Data[0] == 't'
+		// Support both v1 (true/false) and v2 (#true/#false)
+		v.Value = bytes.Equal(t.Data, []byte("true")) || bytes.Equal(t.Data, []byte("#true"))
 	case tokenizer.Null:
 		v.Value = nil
+	case tokenizer.FloatKeyword:
+		switch string(t.Data) {
+		case "#inf":
+			v.Value = math.Inf(1)
+		case "#-inf":
+			v.Value = math.Inf(-1)
+		case "#nan":
+			v.Value = math.NaN()
+		}
 	}
 	if err != nil {
 		err = fmt.Errorf("value from token: %w", err)

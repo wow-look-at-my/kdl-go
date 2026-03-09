@@ -6,7 +6,7 @@ import (
 
 	"github.com/sblinch/kdl-go/document"
 	"github.com/sblinch/kdl-go/internal/marshaler"
-	"github.com/sblinch/kdl-go/internal/tokenizer"
+	"github.com/sblinch/kdl-go/internal/parser"
 )
 
 type UnmarshalOptions = marshaler.UnmarshalOptions
@@ -31,14 +31,17 @@ type Decoder struct {
 // Decode decodes KDL from the Decoder's reader into v; v must contain a pointer type. Returns a non-nil error on
 // failure.
 func (d *Decoder) Decode(v interface{}) error {
-	s := tokenizer.New(d.r)
-	s.RelaxedNonCompliant = d.Options.RelaxedNonCompliant
-	s.ParseComments = d.Options.ParseComments
-	if doc, err := parse(s); err != nil {
-		return err
-	} else {
-		return marshaler.UnmarshalWithOptions(doc, v, d.Options)
+	opts := parser.ParseContextOptions{
+		RelaxedNonCompliant: d.Options.RelaxedNonCompliant,
 	}
+	if d.Options.ParseComments {
+		opts.Flags |= parser.ParseComments
+	}
+	doc, err := ParseWithOptions(d.r, opts)
+	if err != nil {
+		return err
+	}
+	return marshaler.UnmarshalWithOptions(doc, v, d.Options)
 }
 
 // NewDecoder returns a Decoder that reads from r
@@ -48,25 +51,27 @@ func NewDecoder(r io.Reader) *Decoder {
 
 // Unmarshal unmarshals KDL from data into v; v must contain a pointer type. Returns a non-nil error on failure.
 func Unmarshal(data []byte, v interface{}) error {
-	s := tokenizer.NewSlice(data)
-	if doc, err := parse(s); err != nil {
+	doc, err := ParseSlice(data)
+	if err != nil {
 		return err
-	} else {
-		return marshaler.Unmarshal(doc, v)
 	}
+	return marshaler.Unmarshal(doc, v)
 }
 
 // UnmarshalWithOptions unmarshals KDL from data into v with the specified options; v must contain a pointer type.
 // Returns a non-nil error on failure.
 func UnmarshalWithOptions(data []byte, v interface{}, opts UnmarshalOptions) error {
-	s := tokenizer.NewSlice(data)
-	s.RelaxedNonCompliant = opts.RelaxedNonCompliant
-	s.ParseComments = opts.ParseComments
-	if doc, err := parse(s); err != nil {
-		return err
-	} else {
-		return marshaler.Unmarshal(doc, v)
+	parseOpts := parser.ParseContextOptions{
+		RelaxedNonCompliant: opts.RelaxedNonCompliant,
 	}
+	if opts.ParseComments {
+		parseOpts.Flags |= parser.ParseComments
+	}
+	doc, err := ParseSliceWithOptions(data, parseOpts)
+	if err != nil {
+		return err
+	}
+	return marshaler.UnmarshalWithOptions(doc, v, opts)
 }
 
 func UnmarshalDocument(doc *document.Document, v interface{}) error {
