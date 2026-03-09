@@ -32,6 +32,7 @@ const (
 	Semicolon
 	Continuation
 	EOF
+	FloatKeyword
 
 	ClassWhitespace
 	ClassValue
@@ -69,6 +70,7 @@ var tokenClasses = map[TokenID][]TokenID{
 	Semicolon:         {ClassTerminator},
 	Continuation:      {},
 	EOF:               {ClassTerminator, ClassEndOfLine},
+	FloatKeyword:      {ClassNumber, ClassValue, ClassNonStringValue},
 }
 
 func (t TokenID) Classes() []TokenID {
@@ -125,6 +127,8 @@ func (t TokenID) String() string {
 		return "Continuation"
 	case EOF:
 		return "EOF"
+	case FloatKeyword:
+		return "FloatKeyword"
 	default:
 		return "(invalid)"
 	}

@@ -369,7 +369,8 @@ func parseQuotedString(b []byte) (string, error) {
 	return v, err
 }
 
-// parseRawString parses a KDL RawString from b and returns the unquoted string, or a non-nil error on failure
+// parseRawString parses a KDL RawString from b and returns the unquoted string, or a non-nil error on failure.
+// Handles both v1 format (r"..."  r#"..."#) and v2 format (#"..."#  ##"..."##)
 func parseRawString(b []byte) (string, error) {
 	// the tokenizer has already validated the string format, so we can safely just use byte offsets
 	p := bytes.IndexByte(b, '"')
@@ -405,9 +406,19 @@ func ValueFromToken(t tokenizer.Token) (*Value, error) {
 		v.Value, err = parseNumber(t.Data, 16)
 		v.Flag = FlagHexadecimal
 	case tokenizer.Boolean:
-		v.Value = t.Data[0] == 't'
+		// Support both v1 (true/false) and v2 (#true/#false)
+		v.Value = bytes.Equal(t.Data, []byte("true")) || bytes.Equal(t.Data, []byte("#true"))
 	case tokenizer.Null:
 		v.Value = nil
+	case tokenizer.FloatKeyword:
+		switch string(t.Data) {
+		case "#inf":
+			v.Value = math.Inf(1)
+		case "#-inf":
+			v.Value = math.Inf(-1)
+		case "#nan":
+			v.Value = math.NaN()
+		}
 	}
 	if err != nil {
 		err = fmt.Errorf("value from token: %w", err)

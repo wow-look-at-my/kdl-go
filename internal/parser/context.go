@@ -22,6 +22,10 @@ const (
 type ParseContextOptions struct {
 	RelaxedNonCompliant relaxed.Flags
 	Flags               ParseFlags
+	// Version specifies the KDL version (0=auto-detect, 1=v1, 2=v2)
+	Version int
+	// VersionCallback is called when the parser detects a version marker, allowing the scanner to switch modes
+	VersionCallback func(int)
 }
 
 var defaultParseContextOptions = ParseContextOptions{
@@ -54,8 +58,10 @@ type ParseContext struct {
 
 	comment pendingComment
 
-	lastAddedNode *document.Node
-	recent        recentTokens
+	lastAddedNode  *document.Node
+	recent         recentTokens
+	version        int
+	hasRealNodes   bool
 }
 
 type pendingComment struct {
@@ -78,6 +84,9 @@ func (c *ParseContext) RelaxedNonCompliant() relaxed.Flags {
 
 // Document returns the current parsed document
 func (c *ParseContext) Document() *document.Document {
+	if c.version != 0 {
+		c.doc.Version = document.Version(c.version)
+	}
 	return c.doc
 }
 

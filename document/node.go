@@ -172,6 +172,8 @@ type NodeWriteOptions struct {
 	AddEquals bool
 	// AddEquals causes ':' symbols to be inserted between nodes and their values, which is noncompliant with the KDL spec
 	AddColons bool
+	// Version specifies the KDL version for output (1=v1, 2=v2)
+	Version int
 }
 
 var defaultNodeWriteOptions = NodeWriteOptions{

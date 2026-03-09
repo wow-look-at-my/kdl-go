@@ -42,6 +42,18 @@ type Scanner struct {
 	RelaxedNonCompliant relaxed.Flags
 	ParseComments       bool
 	r                   io.Reader
+	// Version specifies the KDL version to use for tokenizing (0=auto-detect, 1=v1, 2=v2)
+	Version int
+}
+
+// effectiveVersion returns the KDL version to use for tokenizing.
+// If Version is explicitly set, it returns that. Otherwise defaults to 1.
+// The v2-first auto-detection strategy is handled at the public API level (kdl.go).
+func (s *Scanner) effectiveVersion() int {
+	if s.Version != 0 {
+		return s.Version
+	}
+	return 1
 }
 
 // log records a log message if a logger has been configured
@@ -544,6 +556,11 @@ func (s *Scanner) readNext() (Token, error) {
 			token.ID = SingleLineComment
 			token.Data, err = s.readSingleLineComment()
 			if err != nil {
+				return token, err
+			}
+		} else if c == '#' && s.effectiveVersion() == 2 {
+			s.log("reading v2 hash token")
+			if token.ID, token.Data, err = s.readV2HashToken(); err != nil {
 				return token, err
 			}
 		} else if c == ':' && s.RelaxedNonCompliant.Permit(relaxed.YAMLTOMLAssignments) {
