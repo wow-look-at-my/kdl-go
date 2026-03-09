@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        go-version: ['1.19', '1.21', '1.22']
+        go-version: ['1.22', '1.23']
     steps:
       - uses: actions/checkout@v4
 
@@ -26,7 +26,6 @@ jobs:
         run: go test -tags kdldeterministic -v ./...
 
       - name: Test (race detector)
-        if: matrix.go-version != '1.19'
         run: go test -tags kdldeterministic -race ./...
 
   vet:
